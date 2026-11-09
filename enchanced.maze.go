@@ -1,220 +1,429 @@
 // =============================================================================
-//  MAZE SOLVING ROBOT — A NEURAL NETWORK EVOLVED BY A GENETIC ALGORITHM
+//  MAZE-SOLVING ROBOT
+//  A NEURAL NETWORK, TUNED BY A GENETIC ALGORITHM
 // =============================================================================
 //
-//  WHAT THIS PROGRAM DOES (in plain English):
+//  WHAT THIS PROGRAM DOES (in plain English)
+//  -----------------------------------------
+//  There is a maze. A little robot starts in the top-left corner and must walk
+//  to the exit door in the bottom-right area. Nobody tells the robot the rules.
+//  It has a "brain" made of numbers, and at the start those numbers are random,
+//  so the robot stumbles around blindly.
 //
-//      We have a little maze: a grid of walls and open paths. We want to build
-//      a "robot brain" that can walk from the starting tile to the exit door,
-//      WITHOUT anyone telling it HOW. The robot only senses a few numbers about
-//      its surroundings (how far the walls are) and must pick one of four moves:
-//      Up, Down, Left, or Right.
+//  We then breed robots the same way farmers breed cows:
 //
-//      The robot's "brain" is a NEURAL NETWORK. Think of it as a machine full
-//      of tiny knobs (called "weights"). Each knob controls how strongly one
-//      piece of information influences the robot's decision. At the start all
-//      the knobs are set to random values, so the robot moves completely at
-//      random.
+//      1. Build 300 robots with random brains.
+//      2. Let each one try the maze and give it a score (its "fitness").
+//      3. Copy the best robots into the next generation, with small random
+//         changes ("mutations") in their brains.
+//      4. Repeat. The best robots slowly become better parents, so the
+//         children get better, and after a few hundred rounds one of them
+//         walks straight to the door.
 //
-//      We then create 100 such robots (a "population"), test each one in the
-//      maze, and give each a "fitness" score for how well it did. The best
-//      robots are copied into the next generation, and their knobs get small
-//      random tweaks (this is "mutation" — the same idea as biological
-//      evolution). Over many generations the random knobs slowly get tuned
-//      until a robot can actually reach the exit.
+//  The robot is never taught "turn left at the corner". It figures out a way
+//  to behave by trial and error, exactly like evolution does with animals.
 //
-//      This combination — a NEURAL NETWORK tuned by a GENETIC ALGORITHM — is
-//      one of the simplest ways to make a computer "learn" without ever
-//      teaching it any explicit rules.
 //
-//  WHAT YOU NEED TO KNOW ABOUT THE GO LANGUAGE TO READ THIS FILE:
+// =============================================================================
+//  PART 0 -- THE MATHS, EXPLAINED LIKE YOU ARE IN 5th GRADE
+// =============================================================================
 //
-//      - `func name(...) ... { ... }`  defines a function (a reusable block of
-//        instructions). `main` is the function that runs automatically.
-//      - `var x = 5`  declares a variable (a named box that stores a value).
-//      - `const x = 5` declares a constant (a named box whose value never
-//        changes while the program runs).
-//      - `//` starts a comment; Go ignores the rest of that line.
-//      - `[]int` is a "slice" — an ordered list of whole numbers like [1,2,3].
-//      - `[][]int` is a list of lists — here it represents a 2D grid (rows).
-//      - `for` is a loop — it repeats the instructions inside its braces { }.
-//      - `if ... else` lets the program choose between two paths.
-//      - `type Name struct { ... }` defines a custom object that groups several
-//        values together (a box containing smaller labelled boxes).
-//      - `map[string]int` is a dictionary: a set of key -> value pairs.
+//  Every single thing this program does is built from ONE tiny operation that
+//  you already know: multiply, then add.
 //
-//  GLOSSARY OF THE "AI" WORDS USED IN THIS FILE:
+//  Example. You buy 3 apples and 4 oranges. One apple costs 2 coins and one
+//  orange costs 1 coin. How much money do you need?
 //
-//      NEURAL NETWORK : a stack of simple math operations (loosely inspired by
-//                       brain cells) that maps input numbers to output numbers.
-//      NEURON         : one unit in the network that adds up its inputs and
-//                       produces a single output number.
-//      WEIGHT         : a number (a "knob") that scales an input. Tuning the
-//                       weights is exactly what "learning" means here.
-//      INPUT          : the numbers the robot senses. There are 6 of them
-//                       (4 wall-distances + its own row + its own column).
-//      HIDDEN LAYER   : 16 extra neurons between inputs and outputs. They let
-//                       the brain express more complex behaviour.
-//      OUTPUT         : the robot's decision. There are 4 (Up/Down/Left/Right);
-//                       the largest output wins.
-//      ACTIVATION     : a function applied to a neuron's sum so the network can
-//                       learn non-trivial patterns. We use one called ReLU.
-//      FITNESS        : a score telling us how good a robot is. Higher = better.
-//      GENERATION     : one round of testing all robots and breeding the best.
-//      MUTATION       : a small random change to a weight, imitating evolution.
-//      SELECTION      : picking the best robots to become parents.
+//        3 * 2  +  4 * 1   =   6 + 4   =   10 coins
+//        ^   ^     ^   ^
+//        |   |     |   |
+//      amount      amount
+//            price       price
 //
-//  SUGGESTED READING ORDER (if you get lost, follow this path):
-//      1. The maze            (section 1)  — what the robot has to solve.
-//      2. The neural network  (section 2)  — the robot's brain.
-//      3. The simulation      (section 3)  — how the robot moves & gets scored.
-//      4. The main loop       (section 4)  — how evolution runs the show.
-//      5. Visualization       (section 5)  — how we watch the winner move.
+//  Mathematicians call this a WEIGHTED SUM. That is ALL a neuron is.
 //
+//  In this program:
+//
+//      "how many apples"   ->  an INPUT   (a number the robot SENSES)
+//      "price of an apple" ->  a WEIGHT    (a number the robot LEARNS)
+//
+//  So one neuron is a little calculator that says:
+//
+//      answer = input1*weight1 + input2*weight2 + ... + input10*weight10
+//
+//  ---------------------------------------------------------------------------
+//  1) WHY THE WEIGHTS ARE THE ONLY THING WE "LEARN"
+//  ---------------------------------------------------------------------------
+//  The inputs come from the maze. We cannot change those. But WE choose the
+//  weights. If we choose them badly, the neuron's answer is nonsense. If we
+//  choose them well, the robot behaves sensibly. So "learning" here means
+//  nothing more mysterious than "finding good values for these weights".
+//
+//  Think of each weight as a VOLUME KNOB. Turning a knob up means "pay more
+//  attention to this input". Turning it down (or making it negative) means
+//  "pay less attention" or even "treat this input as a warning sign".
+//
+//  ---------------------------------------------------------------------------
+//  2) WHAT A "BIAS" IS
+//  ---------------------------------------------------------------------------
+//  Some neurons get ONE more number added at the very end, called a BIAS.
+//  Picture a delivery fee added to your shopping bill:
+//
+//      answer = (shopping total) + (delivery fee)
+//
+//  Why is that useful? Because without it, a neuron can only "switch on" when
+//  the shopping total is already bigger than zero. With a delivery fee of -5,
+//  the neuron switches on only when the shopping total is bigger than 5.
+//  So the fee is a way of moving the "yes / no" line wherever we want.
+//  That is the bias's entire job: it slides the threshold.
+//
+//  (The old version of this program had no biases at all. That meant every
+//  neuron whose weights happened to be negative could NEVER switch on -- it
+//  was dead forever, and evolution could not wake it up. Roughly half of the
+//  hidden neurons were wasted.)
+//
+//  ---------------------------------------------------------------------------
+//  3) WHAT "ReLU" IS
+//  ---------------------------------------------------------------------------
+//      relu(x)  =  x    if x is positive
+//      relu(x)  =  0    if x is zero or negative
+//
+//  In words: "if the answer came out negative, throw it away and write 0."
+//  (Shop version: you cannot buy -3 apples, so we just say 0 apples.)
+//
+//  Why bother? Because it turns each neuron into a SWITCH: it is either OFF
+//  (0) or ON (some positive amount). Switches are what let a network build
+//  "if this AND that, then ..." rules instead of only straight-line rules.
+//
+//  ---------------------------------------------------------------------------
+//  4) HOW THE ROBOT CHOOSES A MOVE
+//  ---------------------------------------------------------------------------
+//  Four different output neurons each answer "how much do I like this move?".
+//  The robot simply picks the move with the BIGGEST number. That trick has a
+//  name -- argmax, "the argument (index) of the maximum". You do it when you
+//  pick the tastiest thing on a menu: you do not convert tastiness to
+//  percentages, you just compare and take the biggest.
+//
+//  ---------------------------------------------------------------------------
+//  5) WHY THERE IS A "HIDDEN LAYER"
+//  ---------------------------------------------------------------------------
+//  One layer of neurons can only make simple "if ... then" decisions. A hidden
+//  layer in the middle lets the robot build COMBINATIONS of combinations:
+//  "if there is a wall on my left AND open space ahead AND I am in the top row,
+//  then go right". Those richer rules are what make maze solving possible.
+//
+//
+// =============================================================================
+//  PART 0.5 -- THE SEVEN BUGS THAT KEPT THE OLD VERSION FROM EVER WORKING
+// =============================================================================
+//
+//  The previous version looked almost right but never solved the maze in
+//  10,000 generations -- the whole population turned into identical clones
+//  and the best score froze at 62.18 for 6,500 generations. Seven separate
+//  things were wrong, and each one was hiding the next one. They are marked
+//  in the code with  [FIX 1]..[FIX 7].
+//
+//  [FIX 1] THE SENSORS WERE LYING.
+//      Old code:  if dist > 5 { continue }  left the input at 0.
+//      Result:    any corridor longer than 5 tiles reported 0, which is
+//                 the SAME as "a wall is right in front of me". The robot
+//                 could not tell "open corridor" from "wall".
+//
+//  [FIX 2] THE "I CAN SEE THE DOOR" SIGNAL WAS ALWAYS THROWN AWAY.
+//      Old code added +5.0 to the distance when the exit was in sight, which
+//      guaranteed dist > 5, which triggered [FIX 1]'s `continue`. So the one
+//      signal the robot most needed was silently deleted every single time.
+//      The door now gets its own dedicated input.
+//
+//  [FIX 3] THE SENSOR LIST WAS HARD-CODED TO 6 NUMBERS.
+//      Old code:  inputs := make([]float64, 6)
+//      So the moment you tried to give the robot MORE senses by changing
+//      numInputs, the network read past the end of the list and crashed.
+//      That is why your "advanced sensors" experiment failed so badly --
+//      it was a plumbing bug, not a bad idea. Your instinct was right.
+//
+//  [FIX 4] THE FITNESS FUNCTION WAS REWARDING THE WRONG THING.
+//      Old code:  fitness = 100/(straightLineDistance+1) + tilesVisited*5
+//      Two problems. (a) Wandering could score 275, while "get near the door"
+//      could only score 100 -- so we were breeding tourists, not solvers.
+//      (b) It measured distance AS THE CROW FLIES. But the only route to this
+//      exit goes DOWN to row 7 first and only then back UP, so walking the
+//      correct path made the score worse for about ten steps. Evolution was
+//      punished for doing the right thing. See the ripple explanation below.
+//
+//  [FIX 5] MUTATION WAS BOTH TOO BIG AND TOO SMALL AT ONCE.
+//      Old code nudged 55% of the weights by only 0.2. 55% of ~320 weights is
+//      ~176 changes: that re-randomises the child, so good parents produce
+//      bad children and nothing accumulates. Yet each individual nudge of 0.2
+//      is too small to actually flip a decision, so the robot's behaviour
+//      barely changed either. Net effect: expensive random search.
+//      Now: only 10% of the weights move, but each move is bigger (sigma 0.8),
+//      which is large enough to genuinely change a decision.
+//
+//  [FIX 6] THE POPULATION TURNED INTO CLONES.
+//      Old code kept exactly ONE elite, so within ~3,500 generations all 100
+//      robots had become copies of one robot and had literally ONE distinct
+//      fitness value. With no diversity left, there is nothing to evolve.
+//      Now: keep the top 10 as parents and inject fresh random robots.
+
+//  [FIX 7] BUMPING A WALL BURNED THE WHOLE RUN.
+//      The robot's policy is deterministic -- it has no memory. So if it
+//      decides "left" at a tile where left is a wall, it will decide "left"
+//      there forever. In the old version that was fine, but the run kept going
+//      for the remaining 40+ steps doing nothing at all. Traced: the best robot
+//      got stuck at tile (2,8) and wasted steps 12 through 55 bumping into the
+//      same wall. Now a bump ends the run immediately with a small penalty,
+//      so a "stuck" robot is cheap to test and scores badly for being stuck.
+//
+//
+// =============================================================================
+//  SUGGESTED READING ORDER
+// =============================================================================
+//      PART 1  the maze                   -- what the robot must solve
+//      PART 2  the distance field         -- how we score "getting closer"
+//      PART 3  the robot's brain          -- weights, biases, ReLU, argmax
+//      PART 4  the robot's senses         -- what the 10 inputs mean
+//      PART 5  one attempt at the maze    -- walk, win, or bump
+//      PART 6  the evolution loop         -- breed, mutate, repeat
+//      PART 7  the animation              -- watch the winner walk
+//
+//  HOW TO RUN IT:   go run .
+//  (This folder is a Go "module" now, so `go run .` and `go build .` both work.
+//   Before, you had to write `go run enchanced.maze.go`, and the old rand.go
+//   file in this folder clashed with this one -- it has been removed.)
 // =============================================================================
 
 package main
 
 import (
-	"fmt"       // "format" — used for printing text to the terminal.
-	"math"      // math helpers: square root (Sqrt) and the largest possible float.
-	"math/rand" // random numbers — used to scramble the initial weights.
-	"time"      // clocks — used to seed randomness and to slow the animation down.
+	"fmt"          // printing text to the terminal
+	"math/rand/v2" // random numbers (see the note next to rng below)
+	"sort"         // sorting the population by fitness
+	"time"         // used to pick a different random seed on every run
 )
 
 // ---------------------------------------------------------------------
-// 1. MAZE DEFINITION
+// PART 1 -- THE MAZE
 // ---------------------------------------------------------------------
 //
-// The maze is a grid of numbers stored in a "slice of slices": a list of rows,
-// and each row is a list of columns. The FIRST index picks the ROW (top to
-// bottom) and the SECOND index picks the COLUMN (left to right).
+// The maze is a grid of numbers, stored as a slice of slices: a list of rows,
+// and every row is a list of columns. The FIRST index picks the ROW (top to
+// bottom), the SECOND index picks the COLUMN (left to right).
 //
-// The meaning of each number:
+// What the numbers mean:
 //
-//	1 = Wall   (the robot may NOT walk here)
-//	0 = Empty  (the robot may walk here)
-//	3 = Exit   (the goal — reaching this tile wins the game)
+//	1 = wall   (the robot may NOT walk here)
+//	0 = empty  (the robot may walk here)
+//	3 = exit   (the goal -- standing here wins the game)
 //
-// Drawn with its coordinates, the maze looks like this:
+// Drawn out, this is the exact maze used below.  rows are 0..8, columns 0..11.
 //
-//	     col 0   1   2   3   4   5   6
-//	row 0  ██  ██  ██  ██  ██  ██  ██
-//	row 1  ██  🤖   .   .   ██   .   ██   <- Start is at row 1, col 1
-//	row 2  ██   .   ██   .   ██   .   ██
-//	row 3  ██   .   ██   .   .    .   ██
-//	row 4  ██  ██  ██  ██  ██   .   ██
-//	row 5  ██  ██  🚪   .   .    .   ██   <- Exit is at row 5, col 2
-//	row 6  ██  ██  ██  ██  ██  ██  ██
+//	      col 0  1  2  3  4  5  6  7  8  9 10 11
+//	row 0    ██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██
+//	row 1    ██ 🤖  ·  ·  ██  ·  ·  ·  ·  ·  · ██
+//	row 2    ██  ·  ██  ·  ██  ·  ██ ██  ·  ██ ██ ██
+//	row 3    ██  ·  ██  ·  ·  ·  ██ ██  ·  ██ 🚪 ██
+//	row 4    ██  ·  ██ ██ ██  ·  ██ ██  ·  ██  · ██
+//	row 5    ██  ·  ██  ·  ·  ·  ██  ·  ·  ██  · ██
+//	row 6    ██  ·  ██ ██ ██ ██ ██  ·  ██ ██  · ██
+//	row 7    ██  ·  ·  ·  ·  ██ ██  ·  ·  ·  · ██
+//	row 8    ██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██
 //
-// (The "3" sits at row 5, column 2 — which matches the exitX/exitY constants
-// declared just below.)
+// Notice the shape of the ONLY route. From the start (row 1, col 1) the robot
+// goes right, drops down, goes right again, climbs back UP to row 1, crosses to
+// column 8, dives all the way DOWN to row 7, runs right, then climbs back UP
+// column 10 to the door at (row 3, col 10).
+//
+// That shape matters a lot: the robot has to walk AWAY from the door -- down to
+// row 7 -- in order to get around a wall. That is exactly why the old
+// "straight-line distance" score was broken (see [FIX 4] and PART 2).
+//
+// The shortest route is 25 moves. Each robot gets maxSteps = 60 moves, which is
+// comfortably enough.
 var maze = [][]int{
-	{1, 1, 1, 1, 1, 1, 1},
-	{1, 0, 0, 0, 1, 0, 1}, // Start at (row 1, col 1) — value 0 = empty
-	{1, 0, 1, 0, 1, 0, 1},
-	{1, 0, 1, 0, 0, 0, 1},
-	{1, 1, 1, 1, 1, 0, 1},
-	{1, 1, 3, 0, 0, 0, 1}, // Exit at (row 5, col 2) — value 3 = exit
-	{1, 1, 1, 1, 1, 1, 1},
+	{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+	{1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1}, // start is (1, 1)
+	{1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1},
+	{1, 0, 1, 0, 0, 0, 1, 1, 0, 1, 3, 1}, // exit is (3, 10)
+	{1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 0, 1},
+	{1, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 1},
+	{1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1},
+	{1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1},
+	{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
 }
 
-// startX/startY is the robot's starting tile (row 1, column 1).
-// exitX/exitY  is the goal tile (row 5, column 2).
+// NAMING QUIRK, kept from the original file: "X" means ROW (up/down) and
+// "Y" means COLUMN (left/right). That is the opposite of the usual maths
+// convention, but it is only a name. Do not let it confuse you.
+const startX, startY = 7, 4 // where every run begins
+const exitX, exitY = 3, 10  // the door
+
+// rows and cols are derived from the maze itself, so you can resize the maze
+// and nothing else breaks. (The old file hard-coded "6" and "4" in places,
+// which is exactly the sort of thing that caused [FIX 3].)
+var rows = len(maze)
+var cols = len(maze[0])
+
+// rng is our random number generator, and this single line deserves a note.
 //
-// IMPORTANT NAMING QUIRK: in this program "X" means ROW (the vertical/top-to-
-// bottom direction) and "Y" means COLUMN (the horizontal/left-to-right
-// direction). The names are just labels the author chose; don't let the usual
-// math meaning of "x is horizontal" confuse you here.
-const startX, startY = 1, 1
-const exitX, exitY = 5, 2
+// The old file called rand.Seed(time.Now().UnixNano()). On modern Go that call
+// does NOTHING AT ALL -- it was switched off years ago. So the old program was
+// not seeded the way the comment claimed.
+//
+// Here we build our own generator: PCG is a small, fast, high-quality random
+// algorithm. rand.NewPCG takes two 64-bit "seed" numbers that decide the whole
+// infinite sequence of random values. We feed it the current time so every run
+// is different.
+//
+// EDUCATION EXPERIMENT: change the two numbers below to fixed values, like
+// rand.NewPCG(1, 2), and every run will behave IDENTICALLY. That is how you
+// debug evolution -- a reproducible run is worth a hundred random ones.
+var rng = rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 0x9E3779B97F4A7C15))
 
 // ---------------------------------------------------------------------
-// 2. NEURAL NETWORK STUFF
+// PART 2 -- THE DISTANCE FIELD  (the "ripple" map)
 // ---------------------------------------------------------------------
 //
-// A neural network takes a list of input numbers and produces a list of output
-// numbers. In between, it performs a fixed set of multiplications and
-// additions. The numbers it multiplies by are called WEIGHTS — and those are
-// the ONLY thing that gets "learned". All the rest is fixed code.
+// We need a score that says "this tile is N moves from the door".
 //
-// Our network has THREE layers, written as input -> hidden -> output:
+// A crow flies in a straight line. A mouse has to walk around walls. The old
+// program used the CROW distance (Pythagoras: sqrt(dx*dx + dy*dy)) and that was
+// the single most damaging bug, because in this maze the mouse must walk
+// BACKWARDS (away from the door) to get around a wall. With the crow distance,
+// doing the correct thing made the score worse.
 //
-//     [6 inputs]  --->  [16 hidden neurons]  --->  [4 outputs]
+// So we use the MOUSE distance. How do we find it? With a ripple:
 //
-//   * INPUTS (6): the robot's senses, built by the GetSensoryInputs function:
-//        [0] distance to the wall going Up
-//        [1] distance to the wall going Down
-//        [2] distance to the wall going Left
-//        [3] distance to the wall going Right
-//        [4] the robot's current row    (X)
-//        [5] the robot's current column (Y)
+//  1. Write 0 on the exit tile.
 //
-//   * HIDDEN (16): "in-between" neurons. The outside world never sees them;
-//        they just let the brain combine the inputs in richer, more complex
-//        ways. More hidden neurons = a more powerful (but slower to learn)
-//        brain.
+//  2. Every walkable tile next to a 0 gets 1.
 //
-//   * OUTPUTS (4): one number per possible move. Whichever output is the
-//        biggest becomes the chosen move: 0=Up, 1=Down, 2=Left, 3=Right.
+//  3. Every walkable tile next to a 1 gets 2.
+//
+//  4. Keep going. Each wave is one more step away from the door.
+//
+//     ██ ██ ██ ██ ██ ██ ██
+//     ██  5  4  3 ██  7  6   ...
+//     ██  6 ██  2 ██  8  9
+//     ██  7 ██  1  0 🚪 ...
+//
+// This is called a BREADTH-FIRST SEARCH (BFS), and it is one of the most useful
+// ideas in all of computer science: "how far is everything from this one
+// thing?" You will meet it again in map apps, social networks and games.
+//
+// Because the ripple counts real steps, walking the correct path now always
+// makes the number go DOWN by one. Evolution finally gets an honest signal.
+var distToExit [][]int
 
-const numInputs = 6  // how many input numbers the robot senses
-const numHidden = 16 // how many neurons in the hidden layer
-const numOutputs = 4 // how many moves to choose from (Up/Down/Left/Right)
+const unreachable = 1 << 20 // a big number, meaning "we never got here"
 
-// Agent represents ONE robot and its brain. A "struct" is just a named group
-// of values bundled together. Each robot owns:
+func buildDistanceField() {
+	// Start by filling every square with "unreachable".
+	distToExit = make([][]int, rows)
+	for r := 0; r < rows; r++ {
+		distToExit[r] = make([]int, cols)
+		for c := 0; c < cols; c++ {
+			distToExit[r][c] = unreachable
+		}
+	}
+
+	// The ripple starts at the door.
+	distToExit[exitX][exitY] = 0
+	queue := [][2]int{{exitX, exitY}} // a "queue" = a line of tiles waiting their turn
+
+	for len(queue) > 0 {
+		p := queue[0] // take the tile at the front of the line
+		queue = queue[1:]
+
+		for d := 0; d < 4; d++ {
+			nr := p[0] + dRow[d]
+			nc := p[1] + dCol[d]
+
+			// Skip walls, and skip tiles we already numbered.
+			if maze[nr][nc] == 1 || distToExit[nr][nc] != unreachable {
+				continue
+			}
+			// One step further from the door than the tile we came from.
+			distToExit[nr][nc] = distToExit[p[0]][p[1]] + 1
+			queue = append(queue, [2]int{nr, nc})
+		}
+	}
+}
+
+// ---------------------------------------------------------------------
+// PART 3 -- THE ROBOT'S BRAIN
+// ---------------------------------------------------------------------
+//
+// The brain is three layers, written left to right:
+//
+//	  [10 inputs]  --->  [16 hidden neurons]  --->  [4 outputs]
+//
+//	INPUTS (10): the robot's senses, built in PART 4.
+//	HIDDEN (16): "in-between" neurons. The outside world never sees them.
+//	             They exist so the brain can combine senses into rules.
+//	OUTPUTS (4): one number per possible move. The biggest one wins.
+//	             0 = Up, 1 = Down, 2 = Left, 3 = Right.
+//
+// How the numbers are stored: all the weights live in ONE long flat slice, not
+// in a 2D table. weightsHidden[i*numHidden + h] is "the weight from input i to
+// hidden neuron h". A flat slice is easier to copy and to mutate, which is all
+// we ever do with it. The arithmetic is the same either way.
+const numInputs = 10 // 4 sightlines + 4 "exit visible" flags + 2 coordinates
+const numHidden = 16 // in-between neurons (was 32 in the old file)
+const numOutputs = 4 // Up / Down / Left / Right
+
+// The four directions, in the order the outputs use them. Row goes down as X
+// grows, column goes right as Y grows.
+var dRow = [4]int{-1, 1, 0, 0} // Up, Down, Left, Right  (row change)
+var dCol = [4]int{0, 0, -1, 1} // Up, Down, Left, Right  (column change)
+
+// Agent is ONE robot and its brain. A "struct" is just a named bundle of
+// values kept together. Every robot owns four lists of numbers plus its score.
 type Agent struct {
-	// weightsHidden: the knobs between the 6 inputs and the 16 hidden neurons.
-	// There are 6*16 = 96 of them, stored one after another in one flat list
-	// (a "slice") instead of a 2D table. `float64` means "a decimal number".
+	// Knobs between the 10 senses and the 16 hidden neurons: 10*16 = 160 numbers.
 	weightsHidden []float64
 
-	// weightsOutput: the knobs between the 16 hidden neurons and the 4 outputs.
-	// There are 16*4 = 64 of them.
+	// Knobs between the 16 hidden neurons and the 4 outputs: 16*4 = 64 numbers.
 	weightsOutput []float64
 
-	// fitness: the robot's score from its most recent test run. Higher = better.
+	// One bias per hidden neuron and one per output neuron. These are the
+	// "delivery fees" from PART 0 item 2: they slide each neuron's on/off
+	// threshold. The old file had none at all, which permanently killed every
+	// hidden neuron whose weights happened to come out negative -- roughly
+	// half of them.
+	biasHidden []float64
+	biasOutput []float64
+
+	// The score from the most recent attempt. Higher = better.
 	fitness float64
 }
 
-// NewAgent creates a brand-new robot whose brain knobs (weights) are all set
-// to random numbers between -1.0 and +1.0. Because the weights start random,
-// this robot behaves completely randomly at first. Evolution is what later
-// tunes these weights into something useful.
+// NewAgent builds a robot whose knobs are all set at random.
+//
+// We draw from a NORMAL distribution (a bell curve, mean 0, spread 1) rather
+// than the old flat -1..+1 range. A bell curve gives us mostly small weights
+// and the occasional big one, which is what neural networks like. rand.NormFloat64
+// does exactly that.
+//
+// The biases start at 0.0 -- neutral. Evolution decides later whether to slide
+// them up or down.
 func NewAgent() Agent {
-	// make() allocates a slice (a list) of the given length, filled with 0s.
-	// Here we create one flat list for the hidden weights and one for the
-	// output weights, ready to hold 96 and 64 numbers respectively.
 	a := Agent{
 		weightsHidden: make([]float64, numInputs*numHidden),
 		weightsOutput: make([]float64, numHidden*numOutputs),
+		biasHidden:    make([]float64, numHidden),
+		biasOutput:    make([]float64, numOutputs),
 	}
-
-	// "for i := range slice" loops once per element; i is the position (0,1,2,...).
-	// rand.Float64() returns a random decimal in [0.0, 1.0). Multiplying by 2
-	// gives [0.0, 2.0); subtracting 1 shifts that to [-1.0, 1.0). So each
-	// weight lands somewhere between -1 and +1.
 	for i := range a.weightsHidden {
-		a.weightsHidden[i] = rand.Float64()*2 - 1
+		a.weightsHidden[i] = rng.NormFloat64()
 	}
 	for i := range a.weightsOutput {
-		a.weightsOutput[i] = rand.Float64()*2 - 1
+		a.weightsOutput[i] = rng.NormFloat64()
 	}
 	return a
 }
 
-// relu is our ACTIVATION FUNCTION. A neuron first adds up all its weighted
-// inputs into one number; relu then decides the neuron's final output:
-//
-//	relu(x) = x   if x is positive
-//	relu(x) = 0   if x is negative
-//
-// In other words: any negative sum is clamped to zero, while positive sums
-// pass through unchanged. "ReLU" stands for "Rectified Linear Unit". It is a
-// very common, very cheap choice because it lets the network learn non-linear
-// (i.e. not just straight-line) behaviour, which is required for interesting
-// decision-making.
+// relu is the activation function (see PART 0 item 3): negatives become 0.
 func relu(x float64) float64 {
 	if x < 0 {
 		return 0
@@ -222,44 +431,32 @@ func relu(x float64) float64 {
 	return x
 }
 
-// Predict is the robot "thinking". Given the 6 sensory inputs, it runs them
-// forward through the network (a "forward pass") and returns the number of the
-// move it wants to make: 0=Up, 1=Down, 2=Left, 3=Right.
+// Predict is the robot THINKING. Give it the 10 senses, it gives back a move.
 //
-// The `(a *Agent)` part means this is a "method" — it can read and use the
-// robot's own weights. The `*` means we receive a POINTER (a reference to the
-// original robot), not a copy.
+// The `(a *Agent)` part means this is a "method": it may use the robot's own
+// numbers. The `*` means we get a pointer (a reference to the real robot), not
+// a copy, so we are not duplicating its brain 18,000 times per generation.
 func (a *Agent) Predict(inputs []float64) int {
-	// hidden will hold the 16 hidden neurons' values for this one step.
+	// ---- STEP 1: senses -> hidden layer ----
 	hidden := make([]float64, numHidden)
-
-	// --- STEP 1: INPUTS -> HIDDEN ---------------------------------------
-	// For each hidden neuron h, compute a "weighted sum" of all 6 inputs:
-	//     sum = input0*w0 + input1*w1 + ... + input5*w5
-	// The weight layout: weightsHidden[i*numHidden + h] is the weight that
-	// connects input #i to hidden neuron #h. (They are stored in one flat list,
-	// grouped so that all weights feeding neuron h sit together.)
 	for h := 0; h < numHidden; h++ {
-		sum := 0.0
+		// Start from this neuron's bias ("delivery fee"), not from zero.
+		sum := a.biasHidden[h]
 		for i := 0; i < numInputs; i++ {
 			sum += inputs[i] * a.weightsHidden[i*numHidden+h]
 		}
-		hidden[h] = relu(sum) // apply the activation to the sum
+		hidden[h] = relu(sum) // switch it off if the answer was negative
 	}
 
-	// --- STEP 2: HIDDEN -> OUTPUT ---------------------------------------
-	// Each of the 4 outputs is also a weighted sum of the hidden neurons.
-	// We do NOT use relu here; instead we simply find the BIGGEST output,
-	// because a bigger output means "I'm more confident about this move".
-	bestAction := 0            // remembers which output index is largest
-	maxVal := -math.MaxFloat64 // start from the smallest possible number
+	// ---- STEP 2: hidden layer -> 4 outputs ----
+	// Remember only the biggest output and its index: that is argmax.
+	bestAction := 0
+	maxVal := -1e18 // effectively "minus infinity"
 	for o := 0; o < numOutputs; o++ {
-		sum := 0.0
+		sum := a.biasOutput[o]
 		for h := 0; h < numHidden; h++ {
-			// weight connecting hidden neuron #h to output #o
 			sum += hidden[h] * a.weightsOutput[h*numOutputs+o]
 		}
-		// If this output beats the best we've seen so far, remember it.
 		if sum > maxVal {
 			maxVal = sum
 			bestAction = o
@@ -268,368 +465,409 @@ func (a *Agent) Predict(inputs []float64) int {
 	return bestAction
 }
 
-// Clone makes an exact copy of a robot. This matters because slices in Go are
-// shared by REFERENCE: if we simply wrote `copy2 := copy1`, both names would
-// point at the SAME weight lists, so changing one would silently change the
-// other. A proper "deep copy" gives the new robot its own private weight lists.
+// Clone makes a complete private copy of a robot. This matters because Go
+// slices are shared by reference: with a plain `b := a`, both names would point
+// at the SAME weight list, and mutating the child would silently mutate the
+// parent too. A deep copy avoids that trap.
 func (a *Agent) Clone() Agent {
-	// Create fresh, empty lists with the same lengths as the original's lists.
 	c := Agent{
 		weightsHidden: make([]float64, len(a.weightsHidden)),
 		weightsOutput: make([]float64, len(a.weightsOutput)),
+		biasHidden:    make([]float64, len(a.biasHidden)),
+		biasOutput:    make([]float64, len(a.biasOutput)),
 	}
-	// copy() copies elements from the second slice into the first slice.
 	copy(c.weightsHidden, a.weightsHidden)
 	copy(c.weightsOutput, a.weightsOutput)
+	copy(c.biasHidden, a.biasHidden)
+	copy(c.biasOutput, a.biasOutput)
 	return c
 }
 
-// Mutate makes small random changes ("mutations") to some of the robot's
-// weights. For every single weight we roll a random number; if it is below
-// `rate`, we nudge that weight by a random amount drawn from a normal
-// distribution (a bell curve centred on 0) and scaled by 0.2.
+// Mutate makes small random changes to the robot's knobs -- the "child differs
+// slightly from its parent" part of evolution.
 //
-// `rate` is therefore the PROBABILITY that any one weight gets changed. A small
-// rate keeps most of the parent's behaviour intact while exploring tiny
-// variations around it — exactly like children being slightly different from
-// their parents in nature.
-func (a *Agent) Mutate(rate float64) {
-	// Walk through every hidden weight and maybe nudge it.
-	for i := range a.weightsHidden {
-		if rand.Float64() < rate {
-			a.weightsHidden[i] += rand.NormFloat64() * 0.2
+// Two numbers control it, and they pull in opposite directions:
+//
+//	rate  = what FRACTION of the knobs get touched (0.10 = about 1 in 10)
+//	sigma = how FAR each touched knob moves (0.8 = a real, noticeable nudge)
+//
+// [FIX 5] The old file used rate 0.55 and sigma 0.2, which is backwards on both
+// counts: it touched over half the knobs (destroying the parent's behaviour)
+// but moved each one so little that the robot's decisions barely changed.
+//
+// Analogy: to tune 100 radio dials you want to nudge a FEW dials a LOT, listen,
+// and keep what sounds better. You do not want to wiggle all 100 dials by a
+// hair: after the wiggle you can no longer hear the station you liked.
+func (a *Agent) Mutate(rate, sigma float64) {
+	nudge := func(v *float64) {
+		if rng.Float64() < rate {
+			*v += rng.NormFloat64() * sigma
 		}
 	}
-	// Walk through every output weight and maybe nudge it.
+	for i := range a.weightsHidden {
+		nudge(&a.weightsHidden[i])
+	}
 	for i := range a.weightsOutput {
-		if rand.Float64() < rate {
-			a.weightsOutput[i] += rand.NormFloat64() * 0.2
-		}
+		nudge(&a.weightsOutput[i])
+	}
+	for i := range a.biasHidden {
+		nudge(&a.biasHidden[i])
+	}
+	for i := range a.biasOutput {
+		nudge(&a.biasOutput[i])
 	}
 }
 
 // ---------------------------------------------------------------------
-// 3. SIMULATION LOGIC
+// PART 4 -- THE ROBOT'S SENSES  (10 numbers)
 // ---------------------------------------------------------------------
 //
-// This section is where the robot actually walks around and gets scored. It is
-// the "world" the brain lives in: it turns a position into sensory numbers
-// (GetSensoryInputs) and turns a decision into movement (RunMaze).
+// This is the part you were trying to improve, and it is now built from
+// numInputs instead of a hard-coded 6, so you can safely add MORE senses:
+// change numInputs, fill in the new slots here, and nothing crashes.
+//
+// The 10 numbers:
+//
+//	[0..3]  how far can I walk in this direction, from 0.0 to 1.0
+//	        0.0 means "a wall is right in front of me"
+//	        1.0 means "10 or more open tiles that way"
+//	        order: Up, Down, Left, Right
+//
+//	[4..7]  can I SEE the door in this direction? 1.0 = yes, 0.0 = no
+//	        order: Up, Down, Left, Right
+//
+//	[8]     my row, scaled to roughly 0..1
+//	[9]     my column, scaled to roughly 0..1
+//
+// Two deliberate design choices:
+//
+//   - Everything is SCALED to roughly the same size (0..1). Raw row numbers
+//     like "7" would otherwise shout ten times louder than a distance of "0.5",
+//     and the network would listen mostly to the coordinates. In a weighted sum
+//     the biggest numbers win, so we keep them all comparable.
+//
+//   - The door gets its OWN inputs instead of being folded into the distance,
+//     which is what [FIX 2] was about.
+const maxSight = 10.0 // sightlines longer than this are just reported as 10
 
-// GetSensoryInputs builds the 6 numbers the robot "sees" while standing at
-// position (x, y). The first 4 numbers are "how far can I walk in this
-// direction before hitting a wall", and the last 2 are the robot's own
-// coordinates (so the brain can also learn WHERE it is, not just react).
 func GetSensoryInputs(x, y int) []float64 {
-	inputs := make([]float64, 6) // create the list of 6 sense values
+	// Built from numInputs, never from a hard-coded number. [FIX 3]
+	inputs := make([]float64, numInputs)
 
-	// dx/dy encode the four directions as step-changes in (row, column):
-	//   index 0: Up    (row -1, column  0)
-	//   index 1: Down  (row +1, column  0)
-	//   index 2: Left  (row  0, column -1)
-	//   index 3: Right (row  0, column +1)
-	dx := []int{-1, 1, 0, 0}
-	dy := []int{0, 0, -1, 1}
+	for d := 0; d < 4; d++ {
+		dist := 0.0    // how many open tiles we can walk before hitting a wall
+		sawExit := 0.0 // 1.0 if the door is in this line of sight
+		cx, cy := x, y // start walking from the robot's tile
 
-	// Do the same "walk and count" for each of the 4 directions.
-	for i := 0; i < 4; i++ {
-		dist := 0.0    // how many open tiles we could walk before a wall
-		cx, cy := x, y // start walking from the robot's current tile
-
-		// This is an infinite loop; we exit it with `break` when we hit a wall
-		// or find the exit.
 		for {
-			// Take one step in the current direction.
-			cx += dx[i]
-			cy += dy[i]
+			cx += dRow[d]
+			cy += dCol[d]
 
-			// If we stepped onto a wall, stop counting — that's the end of the
-			// corridor in this direction.
-			if maze[cx][cy] == 1 {
+			if maze[cx][cy] == 1 { // wall: end of the corridor
 				break
 			}
-
-			// Otherwise this tile is walkable, so count it as one tile of
-			// visible open space.
 			dist += 1.0
 
-			// If this tile is the exit, add a big bonus and stop. This gives
-			// the network a strong signal whenever the exit is in sight.
-			if maze[cx][cy] == 3 {
-				dist += 5.0
+			if maze[cx][cy] == 3 { // the door!
+				sawExit = 1.0
 				break
 			}
 		}
-		inputs[i] = dist // store the measured distance for this direction
+
+		// [FIX 1] Clamp, never `continue`. A long corridor is "1.0", not "0.0".
+		// Without this single line, long corridors look identical to walls.
+		if dist > maxSight {
+			dist = maxSight
+		}
+		inputs[d] = dist / maxSight // squash 0..10 down to 0..1
+		inputs[4+d] = sawExit       // [FIX 2] the door now reaches the brain
 	}
 
-	// The robot also knows its own position (which row and which column it is
-	// on). float64(...) just converts the whole numbers into decimal numbers so
-	// they match the []float64 list type. This lets the brain learn things like
-	// "when I'm in the top-left area, turn right", instead of only reacting to
-	// nearby walls.
-	inputs[4] = float64(x)
-	inputs[5] = float64(y)
+	// Position, also squashed to roughly 0..1. rows-2 and cols-2 because the
+	// outer ring of the maze is all wall.
+	inputs[8] = float64(x) / float64(rows-2)
+	inputs[9] = float64(y) / float64(cols-2)
 
 	return inputs
 }
 
-// RunMaze lets ONE robot try to walk through the maze for at most maxSteps
-// moves. It returns true if the robot reached the exit, and it writes the
-// robot's "fitness" (score) into agent.fitness either way.
+// ---------------------------------------------------------------------
+// PART 5 -- ONE ATTEMPT AT THE MAZE
+// ---------------------------------------------------------------------
 //
-// The `*Agent` parameter again means we pass the real robot by reference so we
-// can modify its fitness field directly.
-func RunMaze(agent *Agent, maxSteps int) bool {
-	x, y := startX, startY           // every run begins at the start tile
-	minDistToExit := math.MaxFloat64 // remembers the CLOSEST the robot ever got
+// RunMaze lets one robot try the maze. It returns true if the robot reached the
+// door, and it writes the score into agent.fitness either way.
+//
+// SCORING, top to bottom:
+//
+//	reached the door   ->  1000 - steps
+//	                       (so 25 moves scores 975 and 40 moves scores 960:
+//	                        reaching it sooner is better)
+//
+//	otherwise          ->  (how many ripple-steps closer I got) * 10
+//	                        minus  0.1 per step taken
+//	                        minus  2.0 if the run ended by bumping a wall
+//
+// The highest possible non-winning score is about 240, so a win (about 975) is
+// always dramatically better. That gives evolution a clear direction instead of
+// the mixed-up old signal. [FIX 4]
+const bumpPenalty = 2.0
+const stepCost = 0.1
 
-	// visited remembers every tile the robot has stepped on during this run.
-	// It's a map (a dictionary): the key is a text label like "3,4" and the
-	// value is how many times that tile was visited. We use it later to reward
-	// exploring NEW tiles instead of walking in circles.
-	visited := make(map[string]int)
+func progressScore(closestRipple, steps int) float64 {
+	improvement := distToExit[startX][startY] - closestRipple
+	return float64(improvement)*10.0 - stepCost*float64(steps)
+}
 
-	for step := 0; step < maxSteps; step++ {
-		// Record the current tile so we know it has been seen at least once.
-		posKey := fmt.Sprintf("%d,%d", x, y) // turn (x,y) into a text key "x,y"
-		visited[posKey]++
+func RunMaze(agent *Agent, maxStepsAllowed int) bool {
+	x, y := startX, startY
 
-		// How far (straight-line distance) is the robot from the exit right
-		// now? This is the Pythagorean theorem: sqrt(dx^2 + dy^2), where dx and
-		// dy are the row and column differences to the exit.
-		dx := float64(x - exitX)
-		dy := float64(y - exitY)
-		dist := math.Sqrt(dx*dx + dy*dy)
+	// The best (smallest) ripple number this run ever reached. It starts at the
+	// value of the starting tile.
+	closest := distToExit[startX][startY]
 
-		// Remember the smallest distance achieved so far this run.
-		if dist < minDistToExit {
-			minDistToExit = dist
+	for step := 0; step < maxStepsAllowed; step++ {
+		if distToExit[x][y] < closest {
+			closest = distToExit[x][y]
 		}
 
-		// WINNING: if we are standing exactly on the exit, score us and stop.
+		// The brain looks at the senses and picks a move.
+		action := agent.Predict(GetSensoryInputs(x, y))
+
+		nx := x + dRow[action]
+		ny := y + dCol[action]
+
+		if maze[nx][ny] == 1 {
+			// [FIX 7] Bumping a wall ends the run right here.
+			// Because the policy has no memory, the robot would otherwise pick
+			// the same doomed direction for the remaining 40+ steps and learn
+			// nothing. Ending it costs us nothing and scores "stuck" properly.
+			agent.fitness = progressScore(closest, step) - bumpPenalty
+			return false
+		}
+
+		x, y = nx, ny
+
 		if x == exitX && y == exitY {
-			// Reward = 1000 minus the number of steps taken. So reaching the
-			// exit in FEWER steps gives a HIGHER fitness: faster solutions are
-			// favoured by evolution.
-			agent.fitness = 1000.0 - float64(step)
+			agent.fitness = 1000.0 - float64(step+1)
 			return true
 		}
-
-		// Otherwise, ask the robot's brain what to do next.
-		inputs := GetSensoryInputs(x, y)
-		action := agent.Predict(inputs)
-
-		// Convert the action number into a tentative new position (nx, ny).
-		nx, ny := x, y
-		switch action {
-		case 0:
-			nx-- // Up    (row -1)
-		case 1:
-			nx++ // Down  (row +1)
-		case 2:
-			ny-- // Left  (column -1)
-		case 3:
-			ny++ // Right (column +1)
-		}
-
-		// If the robot tried to walk INTO a wall, its run ends here (it
-		// "crashed"). We do not move it; we simply stop simulating this robot.
-		if maze[nx][ny] == 1 {
-			break
-		}
-		x, y = nx, ny // the move is legal, so actually take the step
 	}
 
-	// FITNESS for robots that did NOT reach the exit. It has two parts added
-	// together:
-	//   * (100 / (closestDistance + 1))  rewards getting NEAR the exit. The +1
-	//     avoids dividing by zero when the robot starts right on top of it.
-	//   * (uniqueTilesExplored * 5)      rewards walking around and seeing NEW
-	//     tiles, which discourages spinning in circles.
-	// A higher total is better.
-	uniqueTilesExplored := float64(len(visited))
-	agent.fitness = (100.0 / (minDistToExit + 1.0)) + (uniqueTilesExplored * 5.0)
-
+	// Out of moves without reaching the door.
+	agent.fitness = progressScore(closest, maxStepsAllowed)
 	return false
 }
 
 // ---------------------------------------------------------------------
-// 4. MAIN LOOP
+// PART 6 -- THE EVOLUTION LOOP
 // ---------------------------------------------------------------------
 //
-// This is where EVOLUTION happens. Generation after generation, every robot is
-// tested, the best are kept, and mutated copies of them fill the next
-// generation — until one robot finally solves the maze.
+// These are the knobs of the BREEDING process itself. They are not part of the
+// robot's brain; they are how we raise a generation of robots.
 
-// main is the entry point of every Go program: it runs automatically when the
-// program starts.
+const (
+	populationSize = 300   // how many robots live in one generation
+	maxGenerations = 10000 // safety stop
+	maxSteps       = 60    // moves allowed per attempt (shortest route is 25)
+
+	mutationRate  = 0.10 // fraction of knobs nudged in a child
+	mutationSigma = 0.8  // how far each nudged knob travels
+
+	// [FIX 6] Keep the best 10 robots UNCHANGED in every generation. The old
+	// file kept only 1, and the population turned into clones. Keeping 10
+	// throws away a little speed but keeps several different good ideas alive.
+	numElites = 10
+)
+
+// A few brand-new random robots join every generation. These are the "fresh
+// blood": they are usually terrible, but they carry gene combinations that the
+// rest of the population lost. Without them, evolution can paint itself into a
+// corner -- which is exactly what happened in the old version.
+const freshBlood = populationSize / 20
+
+// main is the function Go runs automatically.
 func main() {
-	// Seed the random number generator with the current time. Without this, Go
-	// would produce the SAME random sequence every time the program runs, so
-	// evolution would unfold identically each run. Seeding with the current
-	// nanoseconds (UnixNano) makes each run different.
-	rand.Seed(time.Now().UnixNano())
+	buildDistanceField()
 
-	populationSize := 100    // how many robots live in each generation
-	maxGenerations := 100000 // safety limit so the program can't run forever
-	maxSteps := 20           // how many moves each robot gets per test run
+	// A tiny sanity check you can read: is the maze actually solvable?
+	if distToExit[startX][startY] >= unreachable {
+		fmt.Println("The exit cannot be reached from the start. Fix the maze!")
+		return
+	}
+	fmt.Println("Maze loaded.")
+	fmt.Printf("  %d x %d grid, %d open tiles\n", rows, cols, countOpenTiles())
+	fmt.Printf("  shortest route from start to door: %d moves\n", distToExit[startX][startY])
+	fmt.Printf("  brain: %d inputs -> %d hidden -> %d outputs\n", numInputs, numHidden, numOutputs)
+	fmt.Printf("  population: %d robots, %d moves per attempt, mutation rate %.2f / sigma %.2f\n",
+		populationSize, maxSteps, mutationRate, mutationSigma)
+	fmt.Println()
+	fmt.Println("Starting evolution...")
+	fmt.Println()
 
-	// Build the very first generation: 100 robots with totally random brains.
+	// Generation 0: 300 robots with completely random brains.
 	population := make([]Agent, populationSize)
 	for i := range population {
 		population[i] = NewAgent()
 	}
 
-	fmt.Println("Starting Evolution...")
-
-	// Loop once per generation (gen starts at 1 and counts upward).
 	for gen := 1; gen <= maxGenerations; gen++ {
-		success := false    // did ANY robot solve the maze this generation?
-		bestFitness := -1.0 // the best score seen so far this generation
-		var bestAgent Agent // the robot that achieved that best score
+		// ---------- 1. TEST EVERY ROBOT ----------
+		bestIndex := 0
+		foundWinner := false
+		fitnessSum := 0.0
 
-		// Test every robot in the population, one by one.
 		for i := range population {
-			reachedExit := RunMaze(&population[i], maxSteps)
-			if reachedExit {
-				success = true
+			won := RunMaze(&population[i], maxSteps)
+			if won {
+				foundWinner = true
 			}
-			// Track the single best robot of this generation.
-			if population[i].fitness > bestFitness {
-				bestFitness = population[i].fitness
-				bestAgent = population[i]
+			fitnessSum += population[i].fitness
+			if population[i].fitness > population[bestIndex].fitness {
+				bestIndex = i
 			}
 		}
 
-		// Print progress so we can watch evolution improve over time.
-		// ("%.2f" means "print the number with 2 decimal places".)
-		fmt.Printf("Gen %d | Best Fitness: %.2f\n", gen, bestFitness)
+		bestFitness := population[bestIndex].fitness
+		avgFitness := fitnessSum / float64(populationSize)
+		fmt.Printf("Gen %4d | best %8.2f | average %8.2f\n", gen, bestFitness, avgFitness)
 
-		// If a robot solved the maze, celebrate and replay its winning run.
-		if success {
-			fmt.Printf("✨ Success! An agent solved the maze at Generation %d!\n", gen)
-			fmt.Println("Launching real-time visualization in 2 seconds...")
-			time.Sleep(2 * time.Second) // give the reader a moment before animating
-
-			// Replay the winning agent visually, then quit the program.
-			VisualRun(&bestAgent, maxSteps)
+		// ---------- 2. DID ANYBODY WIN? ----------
+		if foundWinner {
+			// A winner always has a fitness above 900, so the best robot of this
+			// generation is definitely the winner. Show its journey.
+			fmt.Println()
+			fmt.Printf("SUCCESS! A robot solved the maze in generation %d.\n", gen)
+			fmt.Printf("It reached the door in %.0f moves.\n", 1000.0-bestFitness)
+			fmt.Println("Starting the animation in 2 seconds...")
+			time.Sleep(2 * time.Second)
+			VisualRun(&population[bestIndex], maxSteps)
 			return
 		}
 
-		// --- SELECTION (choose the parents) -------------------------------
-		// Build a small group of "survivors": the fittest ~10% of the robots.
-		// We pick them with a "tournament": grab two random robots, keep the
-		// fitter one, and repeat until we have populationSize/10 survivors.
-		survivors := make([]Agent, 0, populationSize/10)
-		for len(survivors) < populationSize/10 {
-			a1 := population[rand.Intn(populationSize)] // a random robot
-			a2 := population[rand.Intn(populationSize)] // another random robot
-			if a1.fitness > a2.fitness {
-				survivors = append(survivors, a1.Clone()) // a1 wins the duel
-			} else {
-				survivors = append(survivors, a2.Clone()) // a2 wins (or tie -> a2)
+		// ---------- 3. RANK THE ROBOTS ----------
+		// "ranked" is a list of POSITIONS (0,1,2,...) sorted so that the fittest
+		// robot's position comes first. We sort positions rather than robots so
+		// that we never accidentally copy the big weight lists around.
+		ranked := make([]int, populationSize)
+		for i := range ranked {
+			ranked[i] = i
+		}
+		sort.Slice(ranked, func(a, b int) bool {
+			return population[ranked[a]].fitness > population[ranked[b]].fitness
+		})
+
+		// ---------- 4. BUILD THE NEXT GENERATION ----------
+		next := make([]Agent, 0, populationSize)
+
+		// (a) Elites: the champion robots, copied with no changes at all.
+		for e := 0; e < numElites; e++ {
+			next = append(next, population[ranked[e]].Clone())
+		}
+
+		// (b) Fresh blood: brand-new random robots, to keep variety alive.
+		for i := 0; i < freshBlood; i++ {
+			next = append(next, NewAgent())
+		}
+
+		// (c) The rest: mutated children of good parents.
+		//
+		// A "tournament" picks two parents at random from the better half of the
+		// population and lets the fitter one breed. This is cheap (no sorting
+		// per child) and it keeps selection pressure without being brutal: a
+		// mediocre robot still gets to be a parent sometimes.
+		half := populationSize / 2
+		for len(next) < populationSize {
+			p1 := ranked[rng.IntN(half)]
+			p2 := ranked[rng.IntN(half)]
+			parent := p1
+			if population[p2].fitness > population[p1].fitness {
+				parent = p2
 			}
+
+			child := population[parent].Clone()
+			child.Mutate(mutationRate, mutationSigma)
+			next = append(next, child)
 		}
 
-		// --- REPRODUCTION (build the next generation) ---------------------
-		// Start the new generation with the single best robot copied as-is.
-		// This is called "elitism": we never lose our best solution so far.
-		newPopulation := make([]Agent, 0, populationSize)
-		newPopulation = append(newPopulation, bestAgent.Clone())
-
-		// Fill the rest of the generation with mutated copies of survivors.
-		// Each child is a clone of a random survivor with a 15% chance per
-		// weight of being nudged — so children resemble their parents but
-		// differ a little, letting evolution explore new possibilities.
-		for len(newPopulation) < populationSize {
-			parent := survivors[rand.Intn(len(survivors))]
-			child := parent.Clone()
-			child.Mutate(0.15) // 0.15 = the mutation rate
-			newPopulation = append(newPopulation, child)
-		}
-
-		// Replace the old generation with the new one, then loop again.
-		population = newPopulation
+		population = next
 	}
 
-	// Reached only if maxGenerations passes with no solution found.
-	fmt.Println("Evolution finished. The maze wasn't completely solved.")
+	fmt.Println()
+	fmt.Printf("Evolution finished after %d generations without a solution.\n", maxGenerations)
+	fmt.Println("Try raising maxGenerations, or lowering mutationSigma a little.")
+}
+
+// countOpenTiles is a tiny helper used only for the greeting message.
+func countOpenTiles() int {
+	n := 0
+	for r := 0; r < rows; r++ {
+		for c := 0; c < cols; c++ {
+			if maze[r][c] != 1 {
+				n++
+			}
+		}
+	}
+	return n
 }
 
 // ---------------------------------------------------------------------
-// 5. VISUALIZATION LOGIC
+// PART 7 -- THE ANIMATION  (for your eyes, not for the learning)
 // ---------------------------------------------------------------------
 //
-// This section is purely for US humans: it draws the maze in the terminal so
-// we can watch the winning robot walk. It does not affect the learning at all.
+// Nothing in this part affects evolution. It just draws the maze in the
+// terminal so you can watch the winning robot walk.
 
-// PrintMaze draws the maze into the terminal so we can SEE what is happening.
-// agentX/agentY is the tile where the robot currently stands.
+// PrintMaze clears the screen and draws one frame.
 func PrintMaze(agentX, agentY int) {
-	// "\033[H\033[2J" is an ANSI escape sequence that moves the cursor to the
-	// top-left and clears the screen. This makes each new frame overwrite the
-	// previous one, creating a simple animation instead of a long scrolling
-	// wall of text.
+	// "\033[H\033[2J" is an ANSI escape code: jump the cursor to the top-left
+	// corner and wipe the screen. That is what makes it look like an animation
+	// instead of a scrolling wall of text.
 	fmt.Print("\033[H\033[2J")
 
-	// Loop over every row (r) and every column (c) of the maze, printing a
-	// symbol for each tile.
-	for r := 0; r < len(maze); r++ { // r = row (top to bottom)
-		for c := 0; c < len(maze[r]); c++ { // c = column (left to right)
-			if r == agentX && c == agentY {
-				fmt.Print("🤖 ") // the robot's current position
-			} else if maze[r][c] == 1 {
-				fmt.Print("██") // a wall
-			} else if r == exitX && c == exitY {
-				fmt.Print("🚪 ") // the exit door
-			} else {
-				fmt.Print("  ") // empty path
+	for r := 0; r < rows; r++ {
+		for c := 0; c < cols; c++ {
+			switch {
+			case r == agentX && c == agentY:
+				fmt.Print("🤖 ")
+			case maze[r][c] == 1:
+				fmt.Print("██")
+			case r == exitX && c == exitY:
+				fmt.Print("🚪 ")
+			default:
+				fmt.Print("  ")
 			}
 		}
-		fmt.Println() // start a new line after finishing each row
+		fmt.Println() // newline after each row
 	}
-	fmt.Println("\nPress Ctrl+C to exit if it loops.")
+	fmt.Println("\nCtrl+C to stop.")
 }
 
-// VisualRun replays a single robot's journey one step at a time, printing the
-// maze after every move so a human can watch the winning robot solve it.
-func VisualRun(agent *Agent, maxSteps int) {
-	x, y := startX, startY // begin at the start tile
+// VisualRun replays one robot's journey, one move at a time.
+func VisualRun(agent *Agent, maxStepsAllowed int) {
+	x, y := startX, startY
 
-	for step := 0; step < maxSteps; step++ {
+	for step := 0; step < maxStepsAllowed; step++ {
 		PrintMaze(x, y)
-		time.Sleep(200 * time.Millisecond) // pause so the animation is watchable
+		time.Sleep(200 * time.Millisecond) // pause so a human can follow along
 
-		// If we are standing on the exit, draw it one final time and celebrate.
 		if x == exitX && y == exitY {
 			PrintMaze(x, y)
-			fmt.Println("\n🎉 Success! The robot reached the exit door!")
+			fmt.Println("\nThe robot reached the door!")
 			return
 		}
 
-		// Ask the brain for its next move and compute the new position.
-		inputs := GetSensoryInputs(x, y)
-		action := agent.Predict(inputs)
+		action := agent.Predict(GetSensoryInputs(x, y))
+		nx := x + dRow[action]
+		ny := y + dCol[action]
 
-		nx, ny := x, y
-		switch action {
-		case 0:
-			nx-- // Up    (row -1)
-		case 1:
-			nx++ // Down  (row +1)
-		case 2:
-			ny-- // Left  (column -1)
-		case 3:
-			ny++ // Right (column +1)
-		}
-
-		// Guard against walking into a wall during the replay (shouldn't happen
-		// for a well-trained robot, but it is a safe fallback).
+		// Safety net: a winner should never bump a wall, but if the maze or the
+		// sensors are edited later, this tells us straight away instead of
+		// crashing with an index error.
 		if maze[nx][ny] == 1 {
-			fmt.Println("\n💥 Oops, the winning agent crashed into a wall during replay!")
+			fmt.Println("\nThe replayed robot bumped into a wall. Something changed. ")
 			return
 		}
-		x, y = nx, ny // take the step
+		x, y = nx, ny
 	}
 }
